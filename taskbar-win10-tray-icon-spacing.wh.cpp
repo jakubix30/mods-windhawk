@@ -17,6 +17,8 @@ This mod arranges notification area (system tray) icons into **two compact rows
 (half on the top, half on the bottom)** on the Windows 10 taskbar (including ExplorerPatcher
 on Windows 11), with icons **pinned to the right edge** next to the system controls.
 
+![Demonstration](https://raw.githubusercontent.com/jakubix30/mods-windhawk/refs/heads/main/demo_tray.png)
+
 ### Key Features:
 - **2 Rows Balanced Grid (50% top / 50% bottom):** Perfectly balances visible icons into two rows!
 - **Right-Aligned Attachment:** Keeps icons snug against the right controls (gear / clock), eliminating dead gaps.
@@ -198,26 +200,17 @@ void GetButtonDimensions(HWND hToolbar, int& outWidth, int& outHeight) {
     outWidth  = iconW + 2 * cxPad;
     if (outWidth < iconW) outWidth = iconW;
 
+    // Always use Shell_TrayWnd (the full taskbar window) as source of truth for
+    // taskbar height.  TrayNotifyWnd is only the right sub-section of the bar and
+    // its height can be temporarily wrong during Explorer/ExplorerPatcher startup
+    // (e.g. it spans the full screen before ep_taskbar finishes layout), which
+    // would cause oversized buttons until the first WM_SIZE fires.
     int taskbarH = 40;
-    HWND hNotify = nullptr;
-    HWND hPager = GetParent(hToolbar);
-    if (hPager) {
-        hNotify = GetParent(hPager);
-    }
-    if (!hNotify) {
-        hNotify = GetParent(hToolbar);
-    }
-
-    RECT rcNotify{};
-    if (hNotify && GetClientRect(hNotify, &rcNotify) && (rcNotify.bottom - rcNotify.top) > 16) {
-        taskbarH = rcNotify.bottom - rcNotify.top;
-    } else {
-        HWND hTray = GetAncestor(hToolbar, GA_ROOT);
-        if (!hTray) hTray = FindWindowW(L"Shell_TrayWnd", nullptr);
-        RECT rcTray{};
-        if (hTray && GetClientRect(hTray, &rcTray)) {
-            taskbarH = rcTray.bottom - rcTray.top;
-        }
+    HWND hTray = GetAncestor(hToolbar, GA_ROOT);  // Shell_TrayWnd or Shell_SecondaryTrayWnd
+    if (!hTray) hTray = FindWindowW(L"Shell_TrayWnd", nullptr);
+    RECT rcTray{};
+    if (hTray && GetClientRect(hTray, &rcTray) && (rcTray.bottom - rcTray.top) > 8) {
+        taskbarH = rcTray.bottom - rcTray.top;
     }
 
     int divisor = (g_settings.rows > 1) ? g_settings.rows : 1;
@@ -297,17 +290,15 @@ bool ComputePagerGeometry(HWND hToolbar, HWND hNotify,
     int expectedW = cols * btnW;
     int expectedH = 2 * btnH; // == taskbarH when rows==2
 
-    outTaskbarH = 40;
-    RECT rcNotify{};
-    if (hNotify && GetClientRect(hNotify, &rcNotify) && (rcNotify.bottom - rcNotify.top) > 16) {
-        outTaskbarH = rcNotify.bottom - rcNotify.top;
-    } else {
-        HWND hTray = GetAncestor(hNotify, GA_ROOT);
-        if (!hTray) hTray = FindWindowW(L"Shell_TrayWnd", nullptr);
-        RECT rcTray{};
-        if (hTray && GetClientRect(hTray, &rcTray)) {
-            outTaskbarH = rcTray.bottom - rcTray.top;
-        }
+    // Use Shell_TrayWnd (full taskbar) as the authoritative height source.
+    // GetButtonDimensions already does the same, so btnH == taskbarH/rows.
+    outTaskbarH = btnH * g_settings.rows;
+    // Clamp to actual Shell_TrayWnd height as sanity check.
+    HWND hTray = GetAncestor(hToolbar, GA_ROOT);
+    if (!hTray) hTray = FindWindowW(L"Shell_TrayWnd", nullptr);
+    RECT rcTray{};
+    if (hTray && GetClientRect(hTray, &rcTray) && (rcTray.bottom - rcTray.top) > 8) {
+        outTaskbarH = rcTray.bottom - rcTray.top;
     }
 
     int rightAnchor = GetTrayRightAnchor(hNotify);
@@ -1194,7 +1185,7 @@ void ApplySettingsToAllTaskbars() {
 }
 
 BOOL Wh_ModInit() {
-    Wh_Log(L"Initializing Taskbar Tray Spacing & 2 Rows (Windows 10 / ExplorerPatcher) mod v1.6.1");
+    Wh_Log(L"Initializing Taskbar Tray Spacing & 2 Rows (Windows 10 / ExplorerPatcher) mod v1.6.2");
 
     LoadSettings();
 
